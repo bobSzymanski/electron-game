@@ -6,16 +6,9 @@ const {
   ipcMain,
   Menu
 } = require("electron");
-const {
-  default: installExtension,
-  REDUX_DEVTOOLS,
-  REACT_DEVELOPER_TOOLS
-} = require("electron-devtools-installer");
+
 const SecureElectronLicenseKeys = require("secure-electron-license-keys");
 const Protocol = require("./protocol");
-const MenuBuilder = require("./menu");
-const i18nextBackend = require("i18next-electron-fs-backend");
-const i18nextMainBackend = require("../localization/i18n.mainconfig");
 const Store = require("secure-electron-store").default;
 const ContextMenu = require("secure-electron-context-menu").default;
 const path = require("path");
@@ -28,7 +21,6 @@ const selfHost = `http://localhost:${port}`;
 // Keep a global reference of the window object, if you don't, the window will
 // be closed automatically when the JavaScript object is garbage collected.
 let win;
-let menuBuilder;
 
 async function createWindow() {
 
@@ -59,7 +51,7 @@ async function createWindow() {
     height: 600,
     title: "Application is currently initializing...",
     webPreferences: {
-      devTools: isDev,
+      devTools: false,
       nodeIntegration: false,
       nodeIntegrationInWorker: false,
       nodeIntegrationInSubFrames: false,
@@ -71,9 +63,6 @@ async function createWindow() {
       disableBlinkFeatures: "Auxclick"
     }
   });
-
-  // Sets up main.js bindings for our i18next backend
-  i18nextBackend.mainBindings(ipcMain, win, fs);
 
   // Sets up main.js bindings for our electron store;
   // callback is optional and allows you to use store in main process
@@ -113,22 +102,6 @@ async function createWindow() {
     win.setTitle(`Getting started with secure-electron-template (v${app.getVersion()})`);
   });
 
-  // Only do these things when in development
-  if (isDev) {
-
-    // Errors are thrown if the dev tools are opened
-    // before the DOM is ready
-    win.webContents.once("dom-ready", async () => {
-      await installExtension([REDUX_DEVTOOLS, REACT_DEVELOPER_TOOLS])
-        .then((name) => console.log(`Added Extension: ${name}`))
-        .catch((err) => console.log("An error occurred: ", err))
-        .finally(() => {
-          require("electron-debug")(); // https://github.com/sindresorhus/electron-debug
-          win.webContents.openDevTools();
-        });
-    });
-  }
-
   // Emitted when the window is closed.
   win.on("closed", () => {
     // Dereference the window object, usually you would store windows
@@ -154,38 +127,6 @@ async function createWindow() {
         permCallback(false); // Deny
       }
     });
-
-  // https://electronjs.org/docs/tutorial/security#1-only-load-secure-content;
-  // The below code can only run when a scheme and host are defined, I thought
-  // we could use this over _all_ urls
-  // ses.fromPartition(partition).webRequest.onBeforeRequest({urls:["http://localhost./*"]}, (listener) => {
-  //   if (listener.url.indexOf("http://") >= 0) {
-  //     listener.callback({
-  //       cancel: true
-  //     });
-  //   }
-  // });
-
-  menuBuilder = MenuBuilder(win, app.name);
-  
-  // Set up necessary bindings to update the menu items
-  // based on the current language selected
-  i18nextMainBackend.on("initialized", (loaded) => {            
-    i18nextMainBackend.changeLanguage("en");
-    i18nextMainBackend.off("initialized"); // Remove listener to this event as it's not needed anymore   
-  });
-
-  // When the i18n framework starts up, this event is called
-  // (presumably when the default language is initialized)
-  // BEFORE the "initialized" event is fired - this causes an 
-  // error in the logs. To prevent said error, we only call the
-  // below code until AFTER the i18n framework has finished its
-  // "initialized" event.
-  i18nextMainBackend.on("languageChanged", (lng) => {    
-    if (i18nextMainBackend.isInitialized){
-      menuBuilder.buildMenu(i18nextMainBackend);
-    }
-  });
 }
 
 // Needs to be called before app is ready;
@@ -212,7 +153,6 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   } else {
-    i18nextBackend.clearMainBindings(ipcMain);
     ContextMenu.clearMainBindings(ipcMain);
     SecureElectronLicenseKeys.clearMainBindings(ipcMain);
   }
@@ -265,14 +205,6 @@ app.on("web-contents-created", (event, contents) => {
 
     // Disable Node.js integration
     webPreferences.nodeIntegration = false;
-  });
-  // enable i18next translations in popup window
-  contents.on("did-create-window", (window) => {
-    i18nextBackend.mainBindings(ipcMain, window, fs);
-  });
-  // destroy bindings on popup window closed
-  contents.on("destroyed", () => {
-    i18nextBackend.clearMainBindings(ipcMain);
   });
   
   // https://electronjs.org/docs/tutorial/security#13-disable-or-limit-creation-of-new-windows
